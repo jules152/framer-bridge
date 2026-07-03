@@ -19,7 +19,6 @@ const server = http.createServer(async (req, res) => {
       const { title, slug, content } = JSON.parse(body)
 
       const framer = await connect(FRAMER_PROJECT_URL, process.env.FRAMER_API_KEY)
-
       const collections = await framer.getCollections()
       const collection = collections.find(c => c.id === COLLECTION_ID)
 
@@ -28,8 +27,8 @@ const server = http.createServer(async (req, res) => {
       await collection.addItems([{
         slug,
         fieldData: {
-          "fWTTnmR7Y": title,
-          "H4KiIwaFp": content
+          "fWTTnmR7Y": { type: "string", value: title },
+          "H4KiIwaFp": { type: "formattedText", value: content }
         }
       }])
 
