@@ -41,7 +41,30 @@ const server = http.createServer(async (req, res) => {
     }
     return
   }
-
+  // Ajoute ça avant le POST :
+  if (req.method === "GET" && req.url.startsWith("/articles/")) {
+      const slug = req.url.replace("/articles/", "")
+      try {
+          const framer = await connect(FRAMER_PROJECT_URL, process.env.FRAMER_API_KEY)
+          const collections = await framer.getCollections()
+          const collection = collections.find(c => c.id === COLLECTION_ID)
+          const items = await collection.getItems()
+          await framer.disconnect()
+          const item = items.find(i => i.slug === slug)
+          if (!item) { res.writeHead(404); res.end(JSON.stringify({ error: "Not found" })); return }
+          res.writeHead(200)
+          res.end(JSON.stringify({
+              id: item.id,
+              slug: item.slug,
+              title: item.fieldData["fWTTnmR7Y"]?.value || "",
+              content: item.fieldData["H4KiIwaFp"]?.value || ""
+          }))
+      } catch (err) {
+          res.writeHead(500)
+          res.end(JSON.stringify({ error: err.message }))
+      }
+      return
+  }
   // POST / → ajoute un article
   if (req.method === "POST") {
     let body = ""
