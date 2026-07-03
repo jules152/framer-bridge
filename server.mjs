@@ -28,8 +28,8 @@ const server = http.createServer(async (req, res) => {
       const articles = items.map(item => ({
         id: item.id,
         slug: item.slug,
-        title: item.fieldData["fWTTnmR7Y"] || "",
-        content: item.fieldData["H4KiIwaFp"] || ""
+        title: item.fieldData["fWTTnmR7Y"]?.value || "",
+        content: item.fieldData["H4KiIwaFp"]?.value || ""
       }))
 
       res.writeHead(200)
