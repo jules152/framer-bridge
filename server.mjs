@@ -1,62 +1,25 @@
 import { connect } from "framer-api"
 import http from "http"
-import https from "https"
 import busboy from "busboy"
+import { v2 as cloudinary } from "cloudinary"
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+})
 
 const FRAMER_PROJECT_URL = "https://framer.com/projects/Valoricert--5BxZFOBWwXlA9r1bXaaP-9uUaY"
 const COLLECTION_ID = "mm8LhCmM0"
 const PORT = process.env.PORT || 3000
 
 async function uploadToCloudinary(imageBuffer) {
-  const cloudName = process.env.CLOUDINARY_CLOUD_NAME
-  const apiKey = process.env.CLOUDINARY_API_KEY
-  const apiSecret = process.env.CLOUDINARY_API_SECRET
-
   const base64Data = imageBuffer.toString("base64")
-  const timestamp = Math.floor(Date.now() / 1000)
-
-  const { createHash } = await import("crypto")
-  const str = `folder=valoricert&quality=auto&timestamp=${timestamp}&${apiSecret}`
-  const signature = createHash("sha1").update(str).digest("hex")
-
-  const formData = [
-    `file=data:image/png;base64,${base64Data}`,
-    `timestamp=${timestamp}`,
-    `api_key=${apiKey}`,
-    `signature=${signature}`,
-    `quality=auto`,
-    `folder=valoricert`
-  ].join("&")
-
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: "api.cloudinary.com",
-      path: `/v1_1/${cloudName}/image/upload`,
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Content-Length": Buffer.byteLength(formData)
-      }
-    }
-
-    const req = https.request(options, (res) => {
-      let data = ""
-      res.on("data", chunk => data += chunk)
-      res.on("end", () => {
-        try {
-          const json = JSON.parse(data)
-          if (json.secure_url) resolve(json.secure_url)
-          else reject(new Error(json.error?.message || "Cloudinary upload failed"))
-        } catch (e) {
-          reject(e)
-        }
-      })
-    })
-
-    req.on("error", reject)
-    req.write(formData)
-    req.end()
+  const dataUri = `data:image/png;base64,${base64Data}`
+  const result = await cloudinary.uploader.upload(dataUri, {
+    folder: "valoricert"
   })
+  return result.secure_url
 }
 
 function injectImage(html, imageUrl, title) {
@@ -110,7 +73,6 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  // GET /articles
   if (req.method === "GET" && req.url === "/articles") {
     try {
       const framer = await connect(FRAMER_PROJECT_URL, process.env.FRAMER_API_KEY)
@@ -134,7 +96,6 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  // GET /articles/:slug
   if (req.method === "GET" && req.url.startsWith("/articles/")) {
     const slug = req.url.replace("/articles/", "")
     try {
@@ -159,7 +120,6 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  // POST / → ajoute un article (multipart ou JSON)
   if (req.method === "POST") {
     try {
       const contentType = req.headers["content-type"] || ""
