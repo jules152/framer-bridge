@@ -20,6 +20,11 @@ async function uploadToCloudinary(imageBuffer) {
   return result.secure_url
 }
 
+async function uploadFromUrl(url) {
+  const result = await cloudinary.uploader.upload(url, { folder: "valoricert" })
+  return result.secure_url
+}
+
 function parseMultipart(req) {
   return new Promise((resolve, reject) => {
     const bb = busboy({ headers: req.headers })
@@ -45,6 +50,13 @@ function parseJSON(req) {
       try { resolve(JSON.parse(body)) } catch (e) { reject(e) }
     })
   })
+}
+
+function isValidImageBuffer(buf) {
+  if (!buf || buf.length < 4) return false
+  const hex = buf.slice(0, 4).toString("hex")
+  // PNG, JPEG, GIF, WEBP
+  return ["89504e47", "ffd8ffe0", "ffd8ffe1", "47494638", "52494646"].some(sig => hex.startsWith(sig))
 }
 
 const server = http.createServer(async (req, res) => {
@@ -106,25 +118,32 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST") {
     try {
       const contentType = req.headers["content-type"] || ""
-      let title, slug, content, imageBuffer
+      let title, slug, content, imageBuffer, fields
 
       if (contentType.includes("multipart/form-data")) {
-        const { fields, imageBuffer: imgBuf } = await parseMultipart(req)
+        const parsed = await parseMultipart(req)
+        fields = parsed.fields
         title = fields.title
         slug = fields.slug
         content = fields.content
-        imageBuffer = imgBuf
+        imageBuffer = parsed.imageBuffer
       } else {
         const body = await parseJSON(req)
         title = body.title
         slug = body.slug
         content = body.content
+        fields = {}
       }
 
       let imageUrl = ""
-      if (imageBuffer && imageBuffer.length > 0) {
-        console.log("Uploading image to Cloudinary...")
+
+      if (isValidImageBuffer(imageBuffer)) {
+        console.log("Uploading binary image to Cloudinary...")
         imageUrl = await uploadToCloudinary(imageBuffer)
+        console.log("Cloudinary URL:", imageUrl)
+      } else if (fields?.image_source_url) {
+        console.log("Uploading from URL to Cloudinary:", fields.image_source_url)
+        imageUrl = await uploadFromUrl(fields.image_source_url)
         console.log("Cloudinary URL:", imageUrl)
       }
 
