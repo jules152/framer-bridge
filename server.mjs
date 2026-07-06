@@ -16,17 +16,15 @@ async function uploadToCloudinary(imageBuffer) {
   const timestamp = Math.floor(Date.now() / 1000)
 
   const { createHash } = await import("crypto")
-  const str = `folder=valoricert&timestamp=${timestamp}&${apiSecret}`
+  const str = `folder=valoricert&quality=auto&timestamp=${timestamp}&${apiSecret}`
   const signature = createHash("sha1").update(str).digest("hex")
-
-  console.log("str to sign:", str)
-  console.log("apiSecret length:", apiSecret?.length)
 
   const formData = [
     `file=data:image/png;base64,${base64Data}`,
     `timestamp=${timestamp}`,
     `api_key=${apiKey}`,
     `signature=${signature}`,
+    `quality=auto`,
     `folder=valoricert`
   ].join("&")
 
@@ -183,8 +181,6 @@ const server = http.createServer(async (req, res) => {
       let finalContent = content
 
       if (imageBuffer && imageBuffer.length > 0) {
-        console.log("CLOUDINARY_CLOUD_NAME:", process.env.CLOUDINARY_CLOUD_NAME)
-        console.log("CLOUDINARY_API_KEY:", process.env.CLOUDINARY_API_KEY)
         console.log("Uploading image to Cloudinary...")
         const imageUrl = await uploadToCloudinary(imageBuffer)
         console.log("Cloudinary URL:", imageUrl)
