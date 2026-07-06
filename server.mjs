@@ -24,7 +24,6 @@ async function uploadToCloudinary(imageBuffer) {
     `timestamp=${timestamp}`,
     `api_key=${apiKey}`,
     `signature=${signature}`,
-    `quality=auto`,
     `folder=valoricert`
   ].join("&")
 
