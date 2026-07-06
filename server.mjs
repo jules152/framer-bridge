@@ -131,6 +131,9 @@ const server = http.createServer(async (req, res) => {
         slug = fields.slug
         content = fields.content
         imageBuffer = imgBuf
+        console.log("imageBuffer length:", imageBuffer?.length)
+        console.log("imageBuffer start:", imageBuffer?.slice(0, 4).toString("hex"))
+        
       } else {
         const body = await parseJSON(req)
         title = body.title
