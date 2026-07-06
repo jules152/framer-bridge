@@ -19,6 +19,9 @@ async function uploadToCloudinary(imageBuffer) {
   const str = `folder=valoricert&timestamp=${timestamp}&${apiSecret}`
   const signature = createHash("sha1").update(str).digest("hex")
 
+  console.log("str to sign:", str)
+  console.log("apiSecret length:", apiSecret?.length)
+
   const formData = [
     `file=data:image/png;base64,${base64Data}`,
     `timestamp=${timestamp}`,
