@@ -1,22 +1,22 @@
 import { connect } from "framer-api"
 import http from "http"
 import https from "https"
+import busboy from "busboy"
 
 const FRAMER_PROJECT_URL = "https://framer.com/projects/Valoricert--5BxZFOBWwXlA9r1bXaaP-9uUaY"
 const COLLECTION_ID = "mm8LhCmM0"
 const PORT = process.env.PORT || 3000
 
-// Upload base64 image to Cloudinary, returns permanent URL
-async function uploadToCloudinary(base64Data) {
+async function uploadToCloudinary(imageBuffer) {
   const cloudName = process.env.CLOUDINARY_CLOUD_NAME
   const apiKey = process.env.CLOUDINARY_API_KEY
   const apiSecret = process.env.CLOUDINARY_API_SECRET
 
+  const base64Data = imageBuffer.toString("base64")
   const timestamp = Math.floor(Date.now() / 1000)
-  const str = `folder=valoricert&quality=auto&timestamp=${timestamp}&${apiSecret}`
 
-  // Simple SHA1 signature
   const { createHash } = await import("crypto")
+  const str = `folder=valoricert&quality=auto&timestamp=${timestamp}&${apiSecret}`
   const signature = createHash("sha1").update(str).digest("hex")
 
   const formData = [
@@ -24,7 +24,8 @@ async function uploadToCloudinary(base64Data) {
     `timestamp=${timestamp}`,
     `api_key=${apiKey}`,
     `signature=${signature}`,
-    `quality=auto`
+    `quality=auto`,
+    `folder=valoricert`
   ].join("&")
 
   return new Promise((resolve, reject) => {
@@ -58,10 +59,44 @@ async function uploadToCloudinary(base64Data) {
   })
 }
 
-// Insert <img> after the first <h1> in the HTML
 function injectImage(html, imageUrl, title) {
   const imgTag = `<img class="blog-img" src="${imageUrl}" alt="${title}" />`
   return html.replace(/(<\/h1>)/, `$1${imgTag}`)
+}
+
+function parseMultipart(req) {
+  return new Promise((resolve, reject) => {
+    const bb = busboy({ headers: req.headers })
+    const fields = {}
+    let imageBuffer = null
+
+    bb.on("field", (name, val) => {
+      fields[name] = val
+    })
+
+    bb.on("file", (name, file) => {
+      const chunks = []
+      file.on("data", chunk => chunks.push(chunk))
+      file.on("end", () => {
+        imageBuffer = Buffer.concat(chunks)
+      })
+    })
+
+    bb.on("close", () => resolve({ fields, imageBuffer }))
+    bb.on("error", reject)
+    req.pipe(bb)
+  })
+}
+
+function parseJSON(req) {
+  return new Promise((resolve, reject) => {
+    let body = ""
+    req.on("data", chunk => body += chunk)
+    req.on("end", () => {
+      try { resolve(JSON.parse(body)) }
+      catch (e) { reject(e) }
+    })
+  })
 }
 
 const server = http.createServer(async (req, res) => {
@@ -75,7 +110,7 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  // GET /articles → retourne tous les articles du CMS
+  // GET /articles
   if (req.method === "GET" && req.url === "/articles") {
     try {
       const framer = await connect(FRAMER_PROJECT_URL, process.env.FRAMER_API_KEY)
@@ -99,7 +134,7 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  // GET /articles/:slug → retourne un article par slug
+  // GET /articles/:slug
   if (req.method === "GET" && req.url.startsWith("/articles/")) {
     const slug = req.url.replace("/articles/", "")
     try {
@@ -109,11 +144,7 @@ const server = http.createServer(async (req, res) => {
       const items = await collection.getItems()
       await framer.disconnect()
       const item = items.find(i => i.slug === slug)
-      if (!item) {
-        res.writeHead(404)
-        res.end(JSON.stringify({ error: "Not found" }))
-        return
-      }
+      if (!item) { res.writeHead(404); res.end(JSON.stringify({ error: "Not found" })); return }
       res.writeHead(200)
       res.end(JSON.stringify({
         id: item.id,
@@ -128,43 +159,54 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  // POST / → ajoute un article
+  // POST / → ajoute un article (multipart ou JSON)
   if (req.method === "POST") {
-    let body = ""
-    req.on("data", chunk => body += chunk)
-    req.on("end", async () => {
-      try {
-        const { title, slug, content, image_base64 } = JSON.parse(body)
+    try {
+      const contentType = req.headers["content-type"] || ""
+      let title, slug, content, imageBuffer
 
-        let finalContent = content
-
-        // Si une image base64 est fournie, upload sur Cloudinary et injecte dans le HTML
-        if (image_base64) {
-          const imageUrl = await uploadToCloudinary(image_base64)
-          finalContent = injectImage(content, imageUrl, title)
-        }
-
-        const framer = await connect(FRAMER_PROJECT_URL, process.env.FRAMER_API_KEY)
-        const collections = await framer.getCollections()
-        const collection = collections.find(c => c.id === COLLECTION_ID)
-        await collection.addItems([{
-          slug,
-          fieldData: {
-            "fWTTnmR7Y": { type: "string", value: title },
-            "H4KiIwaFp": { type: "formattedText", value: finalContent }
-          }
-        }])
-        await framer.publish()
-        await framer.disconnect()
-
-        res.writeHead(200)
-        res.end(JSON.stringify({ success: true }))
-      } catch (err) {
-        console.error(err)
-        res.writeHead(500)
-        res.end(JSON.stringify({ error: err.message }))
+      if (contentType.includes("multipart/form-data")) {
+        const { fields, imageBuffer: imgBuf } = await parseMultipart(req)
+        title = fields.title
+        slug = fields.slug
+        content = fields.content
+        imageBuffer = imgBuf
+      } else {
+        const body = await parseJSON(req)
+        title = body.title
+        slug = body.slug
+        content = body.content
       }
-    })
+
+      let finalContent = content
+
+      if (imageBuffer && imageBuffer.length > 0) {
+        console.log("Uploading image to Cloudinary...")
+        const imageUrl = await uploadToCloudinary(imageBuffer)
+        console.log("Cloudinary URL:", imageUrl)
+        finalContent = injectImage(content, imageUrl, title)
+      }
+
+      const framer = await connect(FRAMER_PROJECT_URL, process.env.FRAMER_API_KEY)
+      const collections = await framer.getCollections()
+      const collection = collections.find(c => c.id === COLLECTION_ID)
+      await collection.addItems([{
+        slug,
+        fieldData: {
+          "fWTTnmR7Y": { type: "string", value: title },
+          "H4KiIwaFp": { type: "formattedText", value: finalContent }
+        }
+      }])
+      await framer.publish()
+      await framer.disconnect()
+
+      res.writeHead(200)
+      res.end(JSON.stringify({ success: true }))
+    } catch (err) {
+      console.error(err)
+      res.writeHead(500)
+      res.end(JSON.stringify({ error: err.message }))
+    }
     return
   }
 
