@@ -13,7 +13,16 @@ async function uploadToCloudinary(base64Data) {
   const apiSecret = process.env.CLOUDINARY_API_SECRET
 
   const timestamp = Math.floor(Date.now() / 1000)
-  const str = `quality=auto&timestamp=${timestamp}&${apiSecret}`
+  const str = `folder=valoricert&quality=auto&timestamp=${timestamp}&${apiSecret}`
+
+  const formData = [
+    `file=data:image/png;base64,${base64Data}`,
+    `timestamp=${timestamp}`,
+    `api_key=${apiKey}`,
+    `signature=${signature}`,
+    `quality=auto`,
+    `folder=valoricert`
+  ].join("&")
 
   // Simple SHA1 signature
   const { createHash } = await import("crypto")
