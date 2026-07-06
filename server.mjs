@@ -148,6 +148,7 @@ const server = http.createServer(async (req, res) => {
         const imageUrl = await uploadToCloudinary(imageBuffer)
         console.log("Cloudinary URL:", imageUrl)
         finalContent = injectImage(content, imageUrl, title)
+        console.log("finalContent start:", finalContent.slice(0, 200))
       }
 
       const framer = await connect(FRAMER_PROJECT_URL, process.env.FRAMER_API_KEY)
