@@ -181,6 +181,8 @@ const server = http.createServer(async (req, res) => {
       let finalContent = content
 
       if (imageBuffer && imageBuffer.length > 0) {
+        console.log("CLOUDINARY_CLOUD_NAME:", process.env.CLOUDINARY_CLOUD_NAME)
+        console.log("CLOUDINARY_API_KEY:", process.env.CLOUDINARY_API_KEY)
         console.log("Uploading image to Cloudinary...")
         const imageUrl = await uploadToCloudinary(imageBuffer)
         console.log("Cloudinary URL:", imageUrl)
