@@ -1,9 +1,68 @@
 import { connect } from "framer-api"
 import http from "http"
+import https from "https"
 
 const FRAMER_PROJECT_URL = "https://framer.com/projects/Valoricert--5BxZFOBWwXlA9r1bXaaP-9uUaY"
 const COLLECTION_ID = "mm8LhCmM0"
 const PORT = process.env.PORT || 3000
+
+// Upload base64 image to Cloudinary, returns permanent URL
+async function uploadToCloudinary(base64Data) {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME
+  const apiKey = process.env.CLOUDINARY_API_KEY
+  const apiSecret = process.env.CLOUDINARY_API_SECRET
+
+  const timestamp = Math.floor(Date.now() / 1000)
+  const str = `quality=auto&timestamp=${timestamp}&${apiSecret}`
+
+  // Simple SHA1 signature
+  const { createHash } = await import("crypto")
+  const signature = createHash("sha1").update(str).digest("hex")
+
+  const formData = [
+    `file=data:image/png;base64,${base64Data}`,
+    `timestamp=${timestamp}`,
+    `api_key=${apiKey}`,
+    `signature=${signature}`,
+    `quality=auto`
+  ].join("&")
+
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: "api.cloudinary.com",
+      path: `/v1_1/${cloudName}/image/upload`,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": Buffer.byteLength(formData)
+      }
+    }
+
+    const req = https.request(options, (res) => {
+      let data = ""
+      res.on("data", chunk => data += chunk)
+      res.on("end", () => {
+        try {
+          const json = JSON.parse(data)
+          if (json.secure_url) resolve(json.secure_url)
+          else reject(new Error(json.error?.message || "Cloudinary upload failed"))
+        } catch (e) {
+          reject(e)
+        }
+      })
+    })
+
+    req.on("error", reject)
+    req.write(formData)
+    req.end()
+  })
+}
+
+// Insert <img> after the first <h1> in the HTML
+function injectImage(html, imageUrl, title) {
+  const imgTag = `<img class="blog-img" src="${imageUrl}" alt="${title}" />`
+  return html.replace(/(<\/h1>)/, `$1${imgTag}`)
+}
 
 const server = http.createServer(async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*")
@@ -24,14 +83,12 @@ const server = http.createServer(async (req, res) => {
       const collection = collections.find(c => c.id === COLLECTION_ID)
       const items = await collection.getItems()
       await framer.disconnect()
-
       const articles = items.map(item => ({
         id: item.id,
         slug: item.slug,
         title: item.fieldData["fWTTnmR7Y"]?.value || "",
         content: item.fieldData["H4KiIwaFp"]?.value || ""
       }))
-
       res.writeHead(200)
       res.end(JSON.stringify(articles))
     } catch (err) {
@@ -41,49 +98,62 @@ const server = http.createServer(async (req, res) => {
     }
     return
   }
-  // Ajoute ça avant le POST :
+
+  // GET /articles/:slug → retourne un article par slug
   if (req.method === "GET" && req.url.startsWith("/articles/")) {
-      const slug = req.url.replace("/articles/", "")
-      try {
-          const framer = await connect(FRAMER_PROJECT_URL, process.env.FRAMER_API_KEY)
-          const collections = await framer.getCollections()
-          const collection = collections.find(c => c.id === COLLECTION_ID)
-          const items = await collection.getItems()
-          await framer.disconnect()
-          const item = items.find(i => i.slug === slug)
-          if (!item) { res.writeHead(404); res.end(JSON.stringify({ error: "Not found" })); return }
-          res.writeHead(200)
-          res.end(JSON.stringify({
-              id: item.id,
-              slug: item.slug,
-              title: item.fieldData["fWTTnmR7Y"]?.value || "",
-              content: item.fieldData["H4KiIwaFp"]?.value || ""
-          }))
-      } catch (err) {
-          res.writeHead(500)
-          res.end(JSON.stringify({ error: err.message }))
+    const slug = req.url.replace("/articles/", "")
+    try {
+      const framer = await connect(FRAMER_PROJECT_URL, process.env.FRAMER_API_KEY)
+      const collections = await framer.getCollections()
+      const collection = collections.find(c => c.id === COLLECTION_ID)
+      const items = await collection.getItems()
+      await framer.disconnect()
+      const item = items.find(i => i.slug === slug)
+      if (!item) {
+        res.writeHead(404)
+        res.end(JSON.stringify({ error: "Not found" }))
+        return
       }
-      return
+      res.writeHead(200)
+      res.end(JSON.stringify({
+        id: item.id,
+        slug: item.slug,
+        title: item.fieldData["fWTTnmR7Y"]?.value || "",
+        content: item.fieldData["H4KiIwaFp"]?.value || ""
+      }))
+    } catch (err) {
+      res.writeHead(500)
+      res.end(JSON.stringify({ error: err.message }))
+    }
+    return
   }
+
   // POST / → ajoute un article
   if (req.method === "POST") {
     let body = ""
     req.on("data", chunk => body += chunk)
     req.on("end", async () => {
       try {
-        const { title, slug, content } = JSON.parse(body)
+        const { title, slug, content, image_base64 } = JSON.parse(body)
+
+        let finalContent = content
+
+        // Si une image base64 est fournie, upload sur Cloudinary et injecte dans le HTML
+        if (image_base64) {
+          const imageUrl = await uploadToCloudinary(image_base64)
+          finalContent = injectImage(content, imageUrl, title)
+        }
+
         const framer = await connect(FRAMER_PROJECT_URL, process.env.FRAMER_API_KEY)
         const collections = await framer.getCollections()
         const collection = collections.find(c => c.id === COLLECTION_ID)
-
         await collection.addItems([{
           slug,
           fieldData: {
             "fWTTnmR7Y": { type: "string", value: title },
-            "H4KiIwaFp": { type: "formattedText", value: content }
+            "H4KiIwaFp": { type: "formattedText", value: finalContent }
           }
         }])
-
         await framer.publish()
         await framer.disconnect()
 
