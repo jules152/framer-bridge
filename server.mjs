@@ -55,7 +55,6 @@ function parseJSON(req) {
 function isValidImageBuffer(buf) {
   if (!buf || buf.length < 4) return false
   const hex = buf.slice(0, 4).toString("hex")
-  // PNG, JPEG, GIF, WEBP
   return ["89504e47", "ffd8ffe0", "ffd8ffe1", "47494638", "52494646"].some(sig => hex.startsWith(sig))
 }
 
@@ -66,6 +65,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return }
 
+  // GET /articles
   if (req.method === "GET" && req.url === "/articles") {
     try {
       const framer = await connect(FRAMER_PROJECT_URL, process.env.FRAMER_API_KEY)
@@ -78,7 +78,8 @@ const server = http.createServer(async (req, res) => {
         slug: item.slug,
         title: item.fieldData["fWTTnmR7Y"]?.value || "",
         content: item.fieldData["H4KiIwaFp"]?.value || "",
-        image_url: item.fieldData["ZXSGuoPfn"]?.value || ""
+        image_url: item.fieldData["ZXSGuoPfn"]?.value || "",
+        meta_description: item.fieldData["KahK0D52l"]?.value || ""
       }))
       res.writeHead(200)
       res.end(JSON.stringify(articles))
@@ -90,6 +91,7 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  // GET /articles/:slug
   if (req.method === "GET" && req.url.startsWith("/articles/")) {
     const slug = req.url.replace("/articles/", "")
     try {
@@ -106,7 +108,8 @@ const server = http.createServer(async (req, res) => {
         slug: item.slug,
         title: item.fieldData["fWTTnmR7Y"]?.value || "",
         content: item.fieldData["H4KiIwaFp"]?.value || "",
-        image_url: item.fieldData["ZXSGuoPfn"]?.value || ""
+        image_url: item.fieldData["ZXSGuoPfn"]?.value || "",
+        meta_description: item.fieldData["KahK0D52l"]?.value || ""
       }))
     } catch (err) {
       res.writeHead(500)
@@ -115,10 +118,11 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  // POST /articles
   if (req.method === "POST") {
     try {
       const contentType = req.headers["content-type"] || ""
-      let title, slug, content, imageBuffer, fields
+      let title, slug, content, meta_description, imageBuffer, fields
 
       if (contentType.includes("multipart/form-data")) {
         const parsed = await parseMultipart(req)
@@ -126,12 +130,14 @@ const server = http.createServer(async (req, res) => {
         title = fields.title
         slug = fields.slug
         content = fields.content
+        meta_description = fields.meta_description || ""
         imageBuffer = parsed.imageBuffer
       } else {
         const body = await parseJSON(req)
         title = body.title
         slug = body.slug
         content = body.content
+        meta_description = body.meta_description || ""
         fields = {}
       }
 
@@ -155,7 +161,8 @@ const server = http.createServer(async (req, res) => {
         fieldData: {
           "fWTTnmR7Y": { type: "string", value: title },
           "H4KiIwaFp": { type: "formattedText", value: content },
-          "ZXSGuoPfn": { type: "image", value: imageUrl }
+          "ZXSGuoPfn": { type: "image", value: imageUrl },
+          "KahK0D52l": { type: "string", value: meta_description }
         }
       }])
       await framer.publish()
