@@ -79,7 +79,8 @@ const server = http.createServer(async (req, res) => {
         title: item.fieldData["fWTTnmR7Y"]?.value || "",
         content: item.fieldData["H4KiIwaFp"]?.value || "",
         image_url: item.fieldData["ZXSGuoPfn"]?.value || "",
-        meta_description: item.fieldData["KahK0D52l"]?.value || ""
+        meta_description: item.fieldData["KahK0D52l"]?.value || "",
+        created_at: item.createdTime || ""
       }))
       res.writeHead(200)
       res.end(JSON.stringify(articles))
@@ -109,7 +110,8 @@ const server = http.createServer(async (req, res) => {
         title: item.fieldData["fWTTnmR7Y"]?.value || "",
         content: item.fieldData["H4KiIwaFp"]?.value || "",
         image_url: item.fieldData["ZXSGuoPfn"]?.value || "",
-        meta_description: item.fieldData["KahK0D52l"]?.value || ""
+        meta_description: item.fieldData["KahK0D52l"]?.value || "",
+        created_at: item.createdTime || ""
       }))
     } catch (err) {
       res.writeHead(500)
