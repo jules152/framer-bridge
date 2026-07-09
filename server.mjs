@@ -80,7 +80,7 @@ const server = http.createServer(async (req, res) => {
         content: item.fieldData["H4KiIwaFp"]?.value || "",
         image_url: item.fieldData["ZXSGuoPfn"]?.value || "",
         meta_description: item.fieldData["KahK0D52l"]?.value || "",
-        created_at: item.createdTime || ""
+        created_at: item.createdTime || item.created_time || item.created || JSON.stringify(Object.keys(item)) || ""
       }))
       res.writeHead(200)
       res.end(JSON.stringify(articles))
