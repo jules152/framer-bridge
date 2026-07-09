@@ -111,7 +111,7 @@ const server = http.createServer(async (req, res) => {
         content: item.fieldData["H4KiIwaFp"]?.value || "",
         image_url: item.fieldData["ZXSGuoPfn"]?.value || "",
         meta_description: item.fieldData["KahK0D52l"]?.value || "",
-        created_at: item.createdTime || ""
+        created_at: item.fieldData["EOV15THAU"]?.value || ""
       }))
     } catch (err) {
       res.writeHead(500)
@@ -164,7 +164,8 @@ const server = http.createServer(async (req, res) => {
           "fWTTnmR7Y": { type: "string", value: title },
           "H4KiIwaFp": { type: "formattedText", value: content },
           "ZXSGuoPfn": { type: "image", value: imageUrl },
-          "KahK0D52l": { type: "string", value: meta_description }
+          "KahK0D52l": { type: "string", value: meta_description },
+          "EOV15THAU": { type: "date", value: new Date().toISOString() }
         }
       }])
       await framer.publish()
