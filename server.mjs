@@ -12,46 +12,6 @@ cloudinary.config({
 const FRAMER_PROJECT_URL = "https://framer.com/projects/Valoricert--5BxZFOBWwXlA9r1bXaaP-9uUaY"
 const COLLECTION_ID = "mm8LhCmM0"
 const PORT = process.env.PORT || 3000
-const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
-
-// Cache en mémoire
-let articlesCache = null
-let cacheTimestamp = 0
-
-async function fetchArticlesFromFramer() {
-  const framer = await connect(FRAMER_PROJECT_URL, process.env.FRAMER_API_KEY)
-  const collections = await framer.getCollections()
-  const collection = collections.find(c => c.id === COLLECTION_ID)
-  const items = await collection.getItems()
-  await framer.disconnect()
-  return items.map(item => ({
-    id: item.id,
-    slug: item.slug,
-    title: item.fieldData["fWTTnmR7Y"]?.value || "",
-    content: item.fieldData["H4KiIwaFp"]?.value || "",
-    image_url: item.fieldData["ZXSGuoPfn"]?.value || "",
-    meta_description: item.fieldData["KahK0D52l"]?.value || "",
-    created_at: item.fieldData["EOV15THAU"]?.value || ""
-  }))
-}
-
-async function getArticles() {
-  const now = Date.now()
-  if (articlesCache && (now - cacheTimestamp) < CACHE_TTL_MS) {
-    console.log("Cache hit")
-    return articlesCache
-  }
-  console.log("Cache miss - fetching from Framer...")
-  articlesCache = await fetchArticlesFromFramer()
-  cacheTimestamp = Date.now()
-  return articlesCache
-}
-
-function invalidateCache() {
-  articlesCache = null
-  cacheTimestamp = 0
-  console.log("Cache invalidated")
-}
 
 async function uploadToCloudinary(imageBuffer) {
   const base64Data = imageBuffer.toString("base64")
@@ -108,7 +68,20 @@ const server = http.createServer(async (req, res) => {
   // GET /articles
   if (req.method === "GET" && req.url === "/articles") {
     try {
-      const articles = await getArticles()
+      const framer = await connect(FRAMER_PROJECT_URL, process.env.FRAMER_API_KEY)
+      const collections = await framer.getCollections()
+      const collection = collections.find(c => c.id === COLLECTION_ID)
+      const items = await collection.getItems()
+      await framer.disconnect()
+      const articles = items.map(item => ({
+        id: item.id,
+        slug: item.slug,
+        title: item.fieldData["fWTTnmR7Y"]?.value || "",
+        content: item.fieldData["H4KiIwaFp"]?.value || "",
+        image_url: item.fieldData["ZXSGuoPfn"]?.value || "",
+        meta_description: item.fieldData["KahK0D52l"]?.value || "",
+        created_at: item.fieldData["EOV15THAU"]?.value || ""
+      }))
       res.writeHead(200)
       res.end(JSON.stringify(articles))
     } catch (err) {
@@ -123,11 +96,23 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url.startsWith("/articles/")) {
     const slug = req.url.replace("/articles/", "")
     try {
-      const articles = await getArticles()
-      const item = articles.find(a => a.slug === slug)
+      const framer = await connect(FRAMER_PROJECT_URL, process.env.FRAMER_API_KEY)
+      const collections = await framer.getCollections()
+      const collection = collections.find(c => c.id === COLLECTION_ID)
+      const items = await collection.getItems()
+      await framer.disconnect()
+      const item = items.find(i => i.slug === slug)
       if (!item) { res.writeHead(404); res.end(JSON.stringify({ error: "Not found" })); return }
       res.writeHead(200)
-      res.end(JSON.stringify(item))
+      res.end(JSON.stringify({
+        id: item.id,
+        slug: item.slug,
+        title: item.fieldData["fWTTnmR7Y"]?.value || "",
+        content: item.fieldData["H4KiIwaFp"]?.value || "",
+        image_url: item.fieldData["ZXSGuoPfn"]?.value || "",
+        meta_description: item.fieldData["KahK0D52l"]?.value || "",
+        created_at: item.fieldData["EOV15THAU"]?.value || ""
+      }))
     } catch (err) {
       res.writeHead(500)
       res.end(JSON.stringify({ error: err.message }))
@@ -186,9 +171,6 @@ const server = http.createServer(async (req, res) => {
       await framer.publish()
       await framer.disconnect()
 
-      // Invalider le cache après création d'un article
-      invalidateCache()
-
       res.writeHead(200)
       res.end(JSON.stringify({ success: true }))
     } catch (err) {
@@ -203,11 +185,4 @@ const server = http.createServer(async (req, res) => {
   res.end(JSON.stringify({ error: "Not found" }))
 })
 
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`)
-  // Préchauffer le cache au démarrage
-  console.log("Prewarming cache...")
-  getArticles()
-    .then(() => console.log("Cache ready"))
-    .catch(err => console.error("Cache prewarm failed:", err))
-})
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`))
