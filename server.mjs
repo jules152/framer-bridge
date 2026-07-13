@@ -2,8 +2,6 @@ import { connect } from "framer-api"
 import http from "http"
 import busboy from "busboy"
 import { v2 as cloudinary } from "cloudinary"
-import fs from "fs"
-import path from "path"
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -14,30 +12,6 @@ cloudinary.config({
 const FRAMER_PROJECT_URL = "https://framer.com/projects/Valoricert--5BxZFOBWwXlA9r1bXaaP-9uUaY"
 const COLLECTION_ID = "mm8LhCmM0"
 const PORT = process.env.PORT || 3000
-const CACHE_FILE = path.join(process.cwd(), "articles.json")
-
-// Lire le cache fichier
-function readCache() {
-  try {
-    if (fs.existsSync(CACHE_FILE)) {
-      const data = fs.readFileSync(CACHE_FILE, "utf-8")
-      return JSON.parse(data)
-    }
-  } catch (e) {
-    console.error("Erreur lecture cache:", e.message)
-  }
-  return []
-}
-
-// Écrire le cache fichier
-function writeCache(articles) {
-  try {
-    fs.writeFileSync(CACHE_FILE, JSON.stringify(articles), "utf-8")
-    console.log("Cache fichier mis à jour:", articles.length, "articles")
-  } catch (e) {
-    console.error("Erreur écriture cache:", e.message)
-  }
-}
 
 async function uploadToCloudinary(imageBuffer) {
   const base64Data = imageBuffer.toString("base64")
@@ -91,26 +65,62 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return }
 
-  // GET /articles — lecture depuis le fichier JSON local, zéro framer-api
+  // GET /articles
   if (req.method === "GET" && req.url === "/articles") {
-    const articles = readCache()
-    res.writeHead(200)
-    res.end(JSON.stringify(articles))
+    try {
+      const framer = await connect(FRAMER_PROJECT_URL, process.env.FRAMER_API_KEY)
+      const collections = await framer.getCollections()
+      const collection = collections.find(c => c.id === COLLECTION_ID)
+      const items = await collection.getItems()
+      await framer.disconnect()
+      const articles = items.map(item => ({
+        id: item.id,
+        slug: item.slug,
+        title: item.fieldData["fWTTnmR7Y"]?.value || "",
+        content: item.fieldData["H4KiIwaFp"]?.value || "",
+        image_url: item.fieldData["ZXSGuoPfn"]?.value || "",
+        meta_description: item.fieldData["KahK0D52l"]?.value || "",
+        created_at: item.fieldData["EOV15THAU"]?.value || ""
+      }))
+      res.writeHead(200)
+      res.end(JSON.stringify(articles))
+    } catch (err) {
+      console.error(err)
+      res.writeHead(500)
+      res.end(JSON.stringify({ error: err.message }))
+    }
     return
   }
 
-  // GET /articles/:slug — lecture depuis le fichier JSON local
+  // GET /articles/:slug
   if (req.method === "GET" && req.url.startsWith("/articles/")) {
     const slug = req.url.replace("/articles/", "")
-    const articles = readCache()
-    const item = articles.find(a => a.slug === slug)
-    if (!item) { res.writeHead(404); res.end(JSON.stringify({ error: "Not found" })); return }
-    res.writeHead(200)
-    res.end(JSON.stringify(item))
+    try {
+      const framer = await connect(FRAMER_PROJECT_URL, process.env.FRAMER_API_KEY)
+      const collections = await framer.getCollections()
+      const collection = collections.find(c => c.id === COLLECTION_ID)
+      const items = await collection.getItems()
+      await framer.disconnect()
+      const item = items.find(i => i.slug === slug)
+      if (!item) { res.writeHead(404); res.end(JSON.stringify({ error: "Not found" })); return }
+      res.writeHead(200)
+      res.end(JSON.stringify({
+        id: item.id,
+        slug: item.slug,
+        title: item.fieldData["fWTTnmR7Y"]?.value || "",
+        content: item.fieldData["H4KiIwaFp"]?.value || "",
+        image_url: item.fieldData["ZXSGuoPfn"]?.value || "",
+        meta_description: item.fieldData["KahK0D52l"]?.value || "",
+        created_at: item.fieldData["EOV15THAU"]?.value || ""
+      }))
+    } catch (err) {
+      res.writeHead(500)
+      res.end(JSON.stringify({ error: err.message }))
+    }
     return
   }
 
-  // POST /articles — écriture dans Framer CMS via framer-api + mise à jour du fichier JSON
+  // POST /articles
   if (req.method === "POST") {
     try {
       const contentType = req.headers["content-type"] || ""
@@ -161,21 +171,6 @@ const server = http.createServer(async (req, res) => {
       await framer.publish()
       await framer.disconnect()
 
-      // Mettre à jour le fichier JSON local
-      const createdAt = new Date().toISOString()
-      const newArticle = {
-        id: slug,
-        slug,
-        title,
-        content,
-        image_url: imageUrl,
-        meta_description,
-        created_at: createdAt
-      }
-      const articles = readCache()
-      articles.unshift(newArticle)
-      writeCache(articles)
-
       res.writeHead(200)
       res.end(JSON.stringify({ success: true }))
     } catch (err) {
@@ -185,38 +180,9 @@ const server = http.createServer(async (req, res) => {
     }
     return
   }
-  // GET /sync — à appeler une seule fois pour peupler le cache
-  if (req.method === "GET" && req.url === "/sync") {
-    try {
-      const framer = await connect(FRAMER_PROJECT_URL, process.env.FRAMER_API_KEY)
-      const collections = await framer.getCollections()
-      const collection = collections.find(c => c.id === COLLECTION_ID)
-      const items = await collection.getItems()
-      await framer.disconnect()
-      const articles = items.map(item => ({
-        id: item.id,
-        slug: item.slug,
-        title: item.fieldData["fWTTnmR7Y"]?.value || "",
-        content: item.fieldData["H4KiIwaFp"]?.value || "",
-        image_url: item.fieldData["ZXSGuoPfn"]?.value || "",
-        meta_description: item.fieldData["KahK0D52l"]?.value || "",
-        created_at: item.fieldData["EOV15THAU"]?.value || ""
-      }))
-      writeCache(articles)
-      res.writeHead(200)
-      res.end(JSON.stringify({ success: true, count: articles.length }))
-    } catch (err) {
-      res.writeHead(500)
-      res.end(JSON.stringify({ error: err.message }))
-    }
-    return
-  }
+
   res.writeHead(404)
   res.end(JSON.stringify({ error: "Not found" }))
 })
 
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`)
-  console.log(`Cache fichier: ${CACHE_FILE}`)
-  console.log(`Articles en cache: ${readCache().length}`)
-})
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`))
